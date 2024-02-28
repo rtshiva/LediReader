@@ -2,6 +2,7 @@
 // Licensed under the MIT license. See LICENSE file in the project root for full license information.
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.IO;
 using System.Text;
@@ -155,37 +156,38 @@ namespace LediReader.Gui
       var epubBook = EpubReader.ReadBook(fileName);
       _bookContent = epubBook.Content;
 
-      Dictionary<string, EpubTextContentFile> htmlFiles = _bookContent.Html;
-      Dictionary<string, EpubTextContentFile> cssFiles = _bookContent.Css;
+      EpubContentCollection<EpubLocalTextContentFile, EpubRemoteTextContentFile> htmlFiles = _bookContent.Html;
+      EpubContentCollection<EpubLocalTextContentFile, EpubRemoteTextContentFile> cssFiles = _bookContent.Css;
+      EpubContentCollection<EpubLocalByteContentFile, EpubRemoteByteContentFile> fontFiles = _bookContent.Fonts;
       var readingOrder = epubBook.ReadingOrder;
 
       // ----------------- handle fonts ------------------------------
       var fontDictionary = new Dictionary<string, string>(); // Key is the font name, value is the absolute path to the font file
       var fontPath = Path.Combine(_instanceStorageService.InstanceStoragePath, "Fonts");
       Directory.CreateDirectory(fontPath);
-
-      foreach (var entry in _bookContent.Fonts)
+      ReadOnlyCollection<EpubLocalByteContentFile> LocalList =  fontFiles.Local;
+      foreach (var entry in LocalList)
       {
-        var fontName = entry.Key;
-        var bytes = entry.Value;
-        var fontFileName = Path.GetFileName(entry.Value.FileName);
-        fontFileName = Path.Combine(fontPath, fontFileName);
-        using (var stream = new FileStream(fontFileName, FileMode.Create, FileAccess.Write, FileShare.None))
-        {
-          var byteArray = bytes.Content;
-          stream.Write(byteArray, 0, byteArray.Length);
-        }
-        fontDictionary.Add(fontName, fontFileName);
+        //var fontName = entry;
+        //var bytes = entry.Value;
+        //var fontFileName = Path.GetFileName(entry.Value.FileName);
+        //fontFileName = Path.Combine(fontPath, fontFileName);
+        //using (var stream = new FileStream(fontFileName, FileMode.Create, FileAccess.Write, FileShare.None))
+        //{
+        //  var byteArray = bytes.Content;
+        //  stream.Write(byteArray, 0, byteArray.Length);
+        //}
+        //fontDictionary.Add(fontName, fontFileName);
       }
 
       // -------------------------------------------------------------
 
       string GetStyleSheet(string name, string htmlFileNameReferencedFrom)
       {
-        EpubTextContentFile cssFile;
+        EpubRemoteTextContentFile cssFile;
         // calculate absolute name with reference to htmlFileNameReferencedFrom
         var absoluteName = HtmlToFlowDocument.CssStylesheets.GetAbsoluteFileNameForFileRelativeToHtmlFile(name, htmlFileNameReferencedFrom);
-        if (cssFiles.TryGetValue(absoluteName, out cssFile))
+        if (cssFiles.TryGetRemoteFileByUrl(absoluteName, out cssFile))
           return cssFile.Content;
 
         // if this could not resolve the name, then try to go to parent directories
@@ -194,12 +196,12 @@ namespace LediReader.Gui
           var idx = htmlFileNameReferencedFrom.LastIndexOf("/");
           htmlFileNameReferencedFrom = htmlFileNameReferencedFrom.Substring(0, idx - 1);
           absoluteName = HtmlToFlowDocument.CssStylesheets.GetAbsoluteFileNameForFileRelativeToHtmlFile(name, htmlFileNameReferencedFrom);
-          if (cssFiles.TryGetValue(absoluteName, out cssFile))
+          if (cssFiles.TryGetRemoteFileByUrl(absoluteName, out cssFile))
             return cssFile.Content;
         }
 
         // if this was not successful, then try it with the name alone
-        if (cssFiles.TryGetValue(name, out cssFile))
+        if (cssFiles.TryGetRemoteFileByUrl(name, out cssFile))
           return cssFile.Content;
 
         return null;
@@ -209,10 +211,10 @@ namespace LediReader.Gui
       // Entire HTML content of the book
       var converter = new HtmlToFlowDocument.Converter() { AttachSourceAsTags = true };
       var flowDocument = new HtmlToFlowDocument.Dom.FlowDocument();
-      foreach (EpubTextContentFile htmlFile in readingOrder)
+      foreach (EpubLocalTextContentFile htmlFile in readingOrder)
       {
         string htmlContent = htmlFile.Content;
-        var textElement = converter.ConvertXHtml(htmlContent, false, GetStyleSheet, htmlFile.FileName); // create sections
+        var textElement = converter.ConvertXHtml(htmlContent, false, GetStyleSheet, htmlFile.FilePath); // create sections
         flowDocument.AppendChild(textElement); // and add them to the flow document
       }
       Settings.BookSettings.BookFileName = fileName;
@@ -246,7 +248,7 @@ namespace LediReader.Gui
       {
         get
         {
-          if (_contentManager._bookContent.Images.TryGetValue(relativeFileName, out var contentFile))
+          if (_contentManager._bookContent.Images.TryGetLocalFileByFilePath(relativeFileName, out var contentFile))
           {
             using (var stream = new MemoryStream(contentFile.Content))
             {
